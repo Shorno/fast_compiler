@@ -5,44 +5,40 @@ typedef enum {
     NODE_NUMBER,
     NODE_BINOP,
     NODE_VARIABLE,
-    NODE_ASSIGNMENT,
-    NODE_PROGRAM
+    NODE_ASSIGNMENT
 } NodeType;
 
 typedef enum {
-    OP_PLUS,
-    OP_MINUS,
-    OP_MULTIPLY,
-    OP_DIVIDE
+    OP_PLUS, OP_MINUS, OP_MULTIPLY, OP_DIVIDE
 } OperatorType;
 
 typedef struct ASTNode {
     NodeType type;
     union {
-        int number;
-        struct {
+        int number;                       /* NUMBER                     */
+        struct {                          /* BINOP                      */
             OperatorType op;
             struct ASTNode *left;
             struct ASTNode *right;
         } binop;
-        struct {
-            char *name;
-        } variable;
-        struct {
+        struct { char *name; } variable;  /* VARIABLE                   */
+        struct {                          /* ASSIGNMENT                 */
             char *name;
             struct ASTNode *value;
-        } assignment;
+        } assign;
     } data;
 } ASTNode;
 
-// Function declarations
+/* constructors */
 ASTNode *create_number_node(int value);
-ASTNode *create_binop_node(OperatorType op, ASTNode *left, ASTNode *right);
+ASTNode *create_binop_node(OperatorType op,
+                           ASTNode *left, ASTNode *right);
 ASTNode *create_variable_node(char *name);
 ASTNode *create_assignment_node(char *name, ASTNode *value);
 
-void print_ast(ASTNode *node, int indent);
-int evaluate_ast(ASTNode *node);
-void free_ast(ASTNode *node);
+/* evaluation helpers */
+int  evaluate_ast(ASTNode *node);
+void print_ast   (ASTNode *node, int indent);
+void free_ast    (ASTNode *node);
 
 #endif

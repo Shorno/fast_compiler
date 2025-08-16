@@ -3,115 +3,127 @@
 #include <string.h>
 #include "ast.h"
 
-ASTNode *create_number_node(int value) {
-    ASTNode *node = malloc(sizeof(ASTNode));
-    node->type = NODE_NUMBER;
-    node->data.number = value;
-    return node;
+/* ───── tiny symbol table ───── */
+typedef struct { char *name; int value; } Binding;
+static Binding vars[128];
+static int var_count = 0;
+
+static int *lookup(const char *name)
+{
+    for (int i = 0; i < var_count; ++i)
+        if (strcmp(vars[i].name, name) == 0) return &vars[i].value;
+
+    vars[var_count].name  = strdup(name);
+    vars[var_count].value = 0;
+    return &vars[var_count++].value;
 }
 
-ASTNode *create_binop_node(OperatorType op, ASTNode *left, ASTNode *right) {
-    ASTNode *node = malloc(sizeof(ASTNode));
-    node->type = NODE_BINOP;
-    node->data.binop.op = op;
-    node->data.binop.left = left;
-    node->data.binop.right = right;
-    return node;
+/* ───── constructors ───── */
+ASTNode *create_number_node(int v)
+{
+    ASTNode *n = malloc(sizeof *n);
+    n->type = NODE_NUMBER;
+    n->data.number = v;
+    return n;
 }
 
-ASTNode *create_variable_node(char *name) {
-    ASTNode *node = malloc(sizeof(ASTNode));
-    node->type = NODE_VARIABLE;
-    node->data.variable.name = strdup(name);
-    return node;
+ASTNode *create_binop_node(OperatorType op, ASTNode *l, ASTNode *r)
+{
+    ASTNode *n = malloc(sizeof *n);
+    n->type = NODE_BINOP;
+    n->data.binop.op    = op;
+    n->data.binop.left  = l;
+    n->data.binop.right = r;
+    return n;
 }
 
-ASTNode *create_assignment_node(char *name, ASTNode *value) {
-    ASTNode *node = malloc(sizeof(ASTNode));
-    node->type = NODE_ASSIGNMENT;
-    node->data.assignment.name = strdup(name);
-    node->data.assignment.value = value;
-    return node;
+ASTNode *create_variable_node(char *name)
+{
+    ASTNode *n = malloc(sizeof *n);
+    n->type = NODE_VARIABLE;
+    n->data.variable.name = strdup(name);
+    return n;
 }
 
-void print_ast(ASTNode *node, int indent) {
-    if (!node) return;
+ASTNode *create_assignment_node(char *name, ASTNode *value)
+{
+    ASTNode *n = malloc(sizeof *n);
+    n->type = NODE_ASSIGNMENT;
+    n->data.assign.name  = strdup(name);
+    n->data.assign.value = value;
+    return n;
+}
 
-    for (int i = 0; i < indent; i++) printf("  ");
+/* ───── evaluation ───── */
+int evaluate_ast(ASTNode *n)
+{
+    switch (n->type) {
+        case NODE_NUMBER:   return n->data.number;
 
-    switch (node->type) {
-        case NODE_NUMBER:
-            printf("NUMBER: %d\n", node->data.number);
-            break;
-        case NODE_BINOP:
-            printf("BINOP: ");
-            switch (node->data.binop.op) {
-                case OP_PLUS: printf("+\n"); break;
-                case OP_MINUS: printf("-\n"); break;
-                case OP_MULTIPLY: printf("*\n"); break;
-                case OP_DIVIDE: printf("/\n"); break;
+        case NODE_VARIABLE: return *lookup(n->data.variable.name);
+
+        case NODE_ASSIGNMENT: {
+            int v = evaluate_ast(n->data.assign.value);
+            *lookup(n->data.assign.name) = v;
+            return v;
+        }
+
+        case NODE_BINOP: {
+            int l = evaluate_ast(n->data.binop.left);
+            int r = evaluate_ast(n->data.binop.right);
+            switch (n->data.binop.op) {
+                case OP_PLUS:      return l + r;
+                case OP_MINUS:     return l - r;
+                case OP_MULTIPLY:  return l * r;
+                case OP_DIVIDE:    return l / r;
             }
-            print_ast(node->data.binop.left, indent + 1);
-            print_ast(node->data.binop.right, indent + 1);
+        }
+    }
+    return 0; /* should not get here */
+}
+
+/* ───── pretty-print ───── */
+static void indent(int n){ while(n--) putchar(' '); }
+
+void print_ast(ASTNode *n, int ind)
+{
+    if (!n) return;
+    indent(ind);
+    switch (n->type) {
+        case NODE_NUMBER:
+            printf("NUMBER %d\n", n->data.number); break;
+
+        case NODE_VARIABLE:
+            printf("VAR %s\n", n->data.variable.name); break;
+
+        case NODE_ASSIGNMENT:
+            printf("ASSIGN %s\n", n->data.assign.name);
+            print_ast(n->data.assign.value, ind+2); break;
+
+        case NODE_BINOP:
+            printf("BINOP %c\n", "+-*/"[n->data.binop.op]);
+            print_ast(n->data.binop.left,  ind+2);
+            print_ast(n->data.binop.right, ind+2); break;
+    }
+}
+
+/* ───── cleanup ───── */
+void free_ast(ASTNode *n)
+{
+    if (!n) return;
+    switch (n->type) {
+        case NODE_BINOP:
+            free_ast(n->data.binop.left);
+            free_ast(n->data.binop.right);
             break;
         case NODE_VARIABLE:
-            printf("VARIABLE: %s\n", node->data.variable.name);
+            free(n->data.variable.name);
             break;
         case NODE_ASSIGNMENT:
-            printf("ASSIGNMENT: %s\n", node->data.assignment.name);
-            print_ast(node->data.assignment.value, indent + 1);
+            free(n->data.assign.name);
+            free_ast(n->data.assign.value);
             break;
-        default:
-            printf("Unknown node type\n");
+        default: break;
     }
-}
-
-int evaluate_ast(ASTNode *node) {
-    if (!node) return 0;
-
-    switch (node->type) {
-        case NODE_NUMBER:
-            return node->data.number;
-        case NODE_BINOP:
-            switch (node->data.binop.op) {
-                case OP_PLUS:
-                    return evaluate_ast(node->data.binop.left) +
-                           evaluate_ast(node->data.binop.right);
-                case OP_MINUS:
-                    return evaluate_ast(node->data.binop.left) -
-                           evaluate_ast(node->data.binop.right);
-                case OP_MULTIPLY:
-                    return evaluate_ast(node->data.binop.left) *
-                           evaluate_ast(node->data.binop.right);
-                case OP_DIVIDE:
-                    return evaluate_ast(node->data.binop.left) /
-                           evaluate_ast(node->data.binop.right);
-            }
-            break;
-        default:
-            printf("Cannot evaluate node type\n");
-            return 0;
-    }
-    return 0;
-}
-
-void free_ast(ASTNode *node) {
-    if (!node) return;
-
-    switch (node->type) {
-        case NODE_BINOP:
-            free_ast(node->data.binop.left);
-            free_ast(node->data.binop.right);
-            break;
-        case NODE_VARIABLE:
-            free(node->data.variable.name);
-            break;
-        case NODE_ASSIGNMENT:
-            free(node->data.assignment.name);
-            free_ast(node->data.assignment.value);
-            break;
-        default:
-            break;
-    }
-    free(node);
+    free(n);
 }
